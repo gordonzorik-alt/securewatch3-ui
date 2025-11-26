@@ -1,36 +1,156 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SecureWatch3-UI
 
-## Getting Started
+Next.js 14 frontend for SecureWatch3 video object detection system.
 
-First, run the development server:
+## Features
+
+- **Dark Theme**: Professional dark mode interface
+- **Sidebar Navigation**: Easy access to Dispatch, Videos, and Detections
+- **Real-time Updates**: Auto-polling every 5 seconds with React Query
+- **Video Upload**: Drag-and-drop or click to upload videos
+- **Auto-Detection**: Automatically starts detection after upload
+- **Status Tracking**: Monitor video processing status (uploaded, processing, completed, failed)
+- **Recent Detections**: View latest object detections with confidence scores
+
+## Tech Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Data Fetching**: TanStack React Query
+- **API Base**: http://localhost:4000 (configurable)
+
+## Prerequisites
+
+- Node.js 18+ and npm
+- SecureWatch3 backend API running on port 4000 (or configure via `.env.local`)
+
+## Installation
+
+```bash
+cd ~/Claude/securewatch3-ui
+npm install
+```
+
+## Configuration
+
+The API base URL can be configured in `.env.local`:
+
+```env
+NEXT_PUBLIC_API_BASE=http://localhost:4000
+```
+
+Change `4000` to match your backend API port if different.
+
+## Running the Application
+
+### Development Mode
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The UI will be available at **http://localhost:3000**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Production Build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+securewatch3-ui/
+├── app/
+│   ├── layout.tsx           # Root layout with sidebar
+│   ├── page.tsx             # Root page (redirects to /dispatch)
+│   ├── providers.tsx        # React Query provider
+│   ├── dispatch/
+│   │   └── page.tsx         # Main dispatch console
+│   └── globals.css          # Global styles with dark theme
+├── lib/
+│   ├── types.ts             # TypeScript interfaces
+│   └── api.ts               # API client functions
+├── hooks/
+│   ├── useVideos.ts         # Videos data hook
+│   └── useDetections.ts     # Detections data hook
+└── .env.local               # Environment configuration
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Integration
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The frontend expects the following API endpoints from the backend:
 
-## Deploy on Vercel
+- `GET /api/videos` - Get all videos
+- `GET /api/detections?limit=50` - Get recent detections
+- `POST /api/upload` - Upload video file
+- `POST /api/detect/:videoId` - Start detection for video
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Usage
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **Start the Backend**: Make sure your SecureWatch3 backend API is running on port 4000
+2. **Start the UI**: Run `npm run dev` in this directory
+3. **Open Browser**: Navigate to http://localhost:3000
+4. **Upload Video**: Drag and drop or click to upload a video file
+5. **Watch Detection**: Detection starts automatically and results appear in real-time
+
+## Features in Detail
+
+### Auto-Polling
+- Videos and detections refresh every 5 seconds
+- Implemented with React Query's `refetchInterval`
+
+### Upload Progress
+- Visual progress bar during upload
+- Automatic detection start after successful upload
+
+### Status Badges
+- **UPLOADED**: Gray - Video uploaded, detection not started
+- **PROCESSING**: Yellow - Detection in progress
+- **COMPLETED**: Green - Detection finished successfully
+- **FAILED**: Red - Detection encountered an error
+
+### Dark Theme
+- Professional dark color scheme
+- Custom scrollbar styling
+- Hover effects and transitions
+
+## Troubleshooting
+
+### CORS Errors
+If you see CORS errors, make sure the backend has CORS enabled for http://localhost:3000
+
+### API Connection Issues
+- Check that the backend is running on the configured port
+- Verify `.env.local` has the correct `NEXT_PUBLIC_API_BASE` value
+- Check browser console for specific error messages
+
+### No Data Appearing
+- Verify API endpoints are responding (use browser DevTools Network tab)
+- Check React Query DevTools (visible in development mode)
+- Ensure backend is returning data in the expected format
+
+## Development
+
+To make changes:
+
+1. Edit files in `app/`, `lib/`, or `hooks/`
+2. Changes auto-reload in development mode
+3. TypeScript provides type checking
+4. Tailwind classes provide styling
+
+## Next Steps
+
+Potential enhancements:
+- WebSocket support for real-time updates (socket.io-client already installed)
+- Video playback with bounding boxes
+- Filtering and search for videos/detections
+- Export detection data
+- User authentication
+- Multi-camera support
+
+---
+
+Built with Next.js 14, TypeScript, and Tailwind CSS
