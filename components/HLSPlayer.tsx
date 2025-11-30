@@ -11,6 +11,7 @@ interface HLSPlayerProps {
 export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -21,23 +22,46 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
     if (Hls.isSupported()) {
-      // Chrome, Firefox, Edge - use hls.js
+      // Chrome, Firefox, Edge - use hls.js with LOW LATENCY settings
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        backBufferLength: 90,
+        // Aggressive low-latency settings to prevent delays
+        liveSyncDurationCount: 1,        // Sync to 1 segment behind live
+        liveMaxLatencyDurationCount: 3,  // Max 3 segments behind before seeking
+        liveDurationInfinity: true,      // Treat as infinite live stream
+        highBufferWatchdogPeriod: 1,     // Check buffer every 1 second
+        backBufferLength: 10,            // Only keep 10 seconds of back buffer
+        maxBufferLength: 10,             // Max 10 seconds forward buffer
+        maxMaxBufferLength: 20,          // Hard max 20 seconds
       });
 
       hls.loadSource(src);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        // Jump to live edge on start
+        if (hls.liveSyncPosition) {
+          video.currentTime = hls.liveSyncPosition;
+        }
         video.play().catch((err) => {
           console.log('[HLSPlayer] Autoplay blocked:', err.message);
         });
       });
+
+      // Periodically check if we're too far behind live and catch up
+      intervalRef.current = setInterval(() => {
+        if (hls.liveSyncPosition && video.currentTime < hls.liveSyncPosition - 5) {
+          console.log('[HLSPlayer] Catching up to live edge');
+          video.currentTime = hls.liveSyncPosition;
+        }
+      }, 5000);
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
@@ -73,6 +97,10 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
     }
 
     return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

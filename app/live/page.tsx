@@ -69,20 +69,30 @@ function getIntelligentHeadline(ep: {
 // Thumbnail component that fetches first detection for episode
 function EpisodeThumbnail({ episodeId }: { episodeId: string }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/episodes/${episodeId}/details`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
       .then(data => {
         if (data.success && data.detections?.length > 0) {
           setImageUrl(data.detections[0].imageUrl);
+        } else {
+          setError(true);
         }
       })
-      .catch(() => {});
+      .catch(() => setError(true));
   }, [episodeId]);
 
+  if (error) {
+    return <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500 text-xs">No preview</div>;
+  }
+
   if (!imageUrl) {
-    return <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500 text-xs">Loading...</div>;
+    return <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500 text-xs animate-pulse">Loading...</div>;
   }
 
   return <img src={imageUrl} className="w-full h-full object-cover" alt="Episode thumbnail" />;

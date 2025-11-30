@@ -96,7 +96,10 @@ export default function EpisodeExpandedView({ episode, onClose }: { episode: Epi
 
   useEffect(() => {
     fetch(`${API_BASE}/api/episodes/${episode.id}/details`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
       .then(data => {
         if (data.success && data.detections) {
           setFrames(data.detections);
@@ -106,7 +109,10 @@ export default function EpisodeExpandedView({ episode, onClose }: { episode: Epi
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        // Handle 404 gracefully - the endpoint may not exist on this server
+        setLoading(false);
+      });
   }, [episode.id]);
 
   const threatLevel = episode.threat_assessment?.level || 'LOW';
