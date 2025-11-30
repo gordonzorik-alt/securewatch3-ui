@@ -322,3 +322,237 @@ export async function runLLMAnalysis(
   }
   return response.json();
 }
+
+// =============================================================================
+// Camera Setup API
+// =============================================================================
+
+export interface DiscoveredCamera {
+  ip: string;
+  mac: string;
+  vendor: string;
+  ports: number[];
+  hasRTSP: boolean;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface NetworkScanResult {
+  success: boolean;
+  totalDevices: number;
+  cameras: DiscoveredCamera[];
+  error?: string;
+}
+
+export interface AuthTestResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface RemoteVerifyResult {
+  success: boolean;
+  message?: string;
+  statusCode?: number;
+  hostname?: string;
+  port?: number;
+  error?: string;
+}
+
+export async function scanNetworkForCameras(): Promise<NetworkScanResult> {
+  const response = await fetch(`${API_BASE}/api/cameras/scan`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to scan network');
+  }
+  return response.json();
+}
+
+export async function testCameraAuth(
+  ip: string,
+  port: number,
+  username: string,
+  password: string
+): Promise<AuthTestResult> {
+  const response = await fetch(`${API_BASE}/api/cameras/test-auth`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ip, port, username, password }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to test camera auth');
+  }
+  return response.json();
+}
+
+export async function verifyRemoteStream(url: string): Promise<RemoteVerifyResult> {
+  const response = await fetch(`${API_BASE}/api/cameras/verify-remote`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ url }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to verify remote stream');
+  }
+  return response.json();
+}
+
+export async function getCameraVendors(): Promise<{ success: boolean; vendors: string[]; ports: number[] }> {
+  const response = await fetch(`${API_BASE}/api/cameras/vendors`);
+  if (!response.ok) {
+    throw new Error('Failed to get camera vendors');
+  }
+  return response.json();
+}
+
+// Monitor status types
+export interface MonitorCamera {
+  cameraId: string;
+  pid: number;
+  sourceUrl: string;
+  mode: string;
+  endpoint: string;
+  startedAt: string;
+  restartCount: number;
+  running: boolean;
+}
+
+export interface MonitorStatus {
+  success: boolean;
+  activeCount: number;
+  cameras: MonitorCamera[];
+}
+
+export async function fetchMonitorStatus(): Promise<MonitorStatus> {
+  const response = await fetch(`${API_BASE}/api/monitor/status`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch monitor status');
+  }
+  return response.json();
+}
+
+export function getCameraSnapshotUrl(cameraId: string): string {
+  return `${API_BASE}/api/camera/snapshot/${cameraId}`;
+}
+
+// Live camera detection episodes
+export interface LiveEpisode {
+  id: string;
+  rank: number;
+  source: 'live';
+  cameraId: string;
+  videoId: null;
+  timestamp: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  frameCount: number;
+  threatLevel: string;
+  score: number;
+  keyframe: {
+    frameNumber: number;
+    confidence: number;
+    imageUrl: string | null;
+  };
+  detections: number;
+}
+
+export interface LiveAnalysisResult {
+  success: boolean;
+  source: 'live';
+  episodes: LiveEpisode[];
+  stats: {
+    totalEpisodes: number;
+    totalPersonDetections: number;
+    selectedEpisodes: number;
+    cameras: string[];
+  };
+}
+
+export async function fetchLiveAnalysis(cameraId?: string, limit: number = 20): Promise<LiveAnalysisResult> {
+  let url = `${API_BASE}/api/threats/analyze/live?limit=${limit}`;
+  if (cameraId) {
+    url += `&camera_id=${cameraId}`;
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch live analysis');
+  }
+  return response.json();
+}
+
+// Live detections count (for real-time counter)
+export async function fetchLiveDetections(cameraId?: string, limit: number = 50): Promise<{ success: boolean; detections: any[]; total: number }> {
+  let url = `${API_BASE}/api/detections?source=live&limit=${limit}`;
+  if (cameraId) {
+    url += `&camera_id=${cameraId}`;
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch live detections');
+  }
+  return response.json();
+}
+
+// Live episode frame selection (for 8-frame grid view)
+export interface LiveEpisodeFramesResponse {
+  success: boolean;
+  episode: {
+    id: string;
+    camera_id: string;
+    duration: number;
+    total_frames: number;
+    start_time: string;
+    end_time: string;
+  };
+  frame_selection: {
+    count: number;
+    frames: {
+      frameNumber: number;
+      reason: string;
+      relativeTime: string;
+      zone: string;
+      imageUrl: string;
+      confidence: number;
+      detections: { class: string; confidence: number }[];
+    }[];
+  };
+  message?: string;
+}
+
+export async function fetchLiveEpisodeFrames(episodeId: string, maxFrames: number = 8): Promise<LiveEpisodeFramesResponse> {
+  const url = `${API_BASE}/api/live/episode/${encodeURIComponent(episodeId)}/frames?max_frames=${maxFrames}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch live episode frames');
+  }
+  return response.json();
+}
+
+// Run AI analysis on a live episode
+export async function runLiveEpisodeAnalysis(episodeId: string, maxFrames: number = 8): Promise<LLMAnalysisResult> {
+  const response = await fetch(`${API_BASE}/api/live/episode/${encodeURIComponent(episodeId)}/analyze`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ max_frames: maxFrames }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to run live episode analysis');
+  }
+  return response.json();
+}
+
+// Fetch stored analysis for a live episode
+export async function fetchLiveEpisodeAnalysis(episodeId: string): Promise<StoredAnalysisResponse> {
+  const response = await fetch(`${API_BASE}/api/live/episode/${encodeURIComponent(episodeId)}/analysis`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch live episode analysis');
+  }
+  return response.json();
+}
