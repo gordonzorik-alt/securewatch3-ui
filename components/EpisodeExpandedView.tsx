@@ -26,10 +26,14 @@ interface Detection {
   imageUrl?: string;
   image_path?: string;
   snapshot_path?: string;
+  snapshot_url?: string;
+  image?: string;
+  thumbnail?: string;
   timestamp?: string;
   time?: string;
   label?: string;
   confidence?: number;
+  class?: string;
 }
 
 // Threat code to human-readable labels
@@ -95,6 +99,27 @@ export default function EpisodeExpandedView({ episode, onClose }: { episode: Epi
   const [selectedFrame, setSelectedFrame] = useState<Detection | null>(null);
 
   useEffect(() => {
+    // For live episodes, use detections directly from the episode object
+    if (episode.detections && episode.detections.length > 0) {
+      const localFrames: Detection[] = episode.detections.slice(0, 10).map((det, idx) => ({
+        id: String(det.id || idx),
+        imageUrl: det.imageUrl,
+        snapshot_url: det.snapshot_url,
+        image: det.image,
+        thumbnail: det.thumbnail,
+        timestamp: det.timestamp,
+        confidence: det.confidence,
+        label: det.class
+      }));
+      setFrames(localFrames);
+      if (localFrames.length > 0) {
+        setSelectedFrame(localFrames[0]);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // For persisted episodes, fetch from API
     fetch(`${API_BASE}/api/episodes/${episode.id}/details`)
       .then(res => {
         if (!res.ok) throw new Error('Not found');
@@ -113,7 +138,7 @@ export default function EpisodeExpandedView({ episode, onClose }: { episode: Epi
         // Handle 404 gracefully - the endpoint may not exist on this server
         setLoading(false);
       });
-  }, [episode.id]);
+  }, [episode.id, episode.detections]);
 
   const threatLevel = episode.threat_assessment?.level || 'LOW';
   const threatCode = episode.threat_assessment?.code || 'UNK';
@@ -125,7 +150,14 @@ export default function EpisodeExpandedView({ episode, onClose }: { episode: Epi
   const behavior = episode.analysis?.subject_behavior || '';
 
   const getImageUrl = (det: Detection): string => {
-    return det.imageUrl || det.image_path || det.snapshot_path || '';
+    // Handle various URL formats from different sources
+    if (det.imageUrl) return det.imageUrl;
+    if (det.snapshot_url) return det.snapshot_url.startsWith('http') ? det.snapshot_url : `${API_BASE}${det.snapshot_url}`;
+    if (det.image) return det.image.startsWith('http') ? det.image : `${API_BASE}${det.image}`;
+    if (det.thumbnail) return det.thumbnail.startsWith('http') ? det.thumbnail : `${API_BASE}${det.thumbnail}`;
+    if (det.image_path) return det.image_path;
+    if (det.snapshot_path) return det.snapshot_path;
+    return '';
   };
 
   return (

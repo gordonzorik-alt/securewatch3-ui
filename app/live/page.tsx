@@ -66,13 +66,51 @@ function getIntelligentHeadline(ep: {
   return code || 'Motion Detected';
 }
 
-// Thumbnail component that fetches first detection for episode
-function EpisodeThumbnail({ episodeId }: { episodeId: string }) {
+// Helper to get image URL from detection or episode
+function getDetectionImageUrl(det: Episode['detections'][0]): string {
+  if (!det) return '';
+  if (det.imageUrl) return det.imageUrl;
+  if (det.snapshot_url) return det.snapshot_url.startsWith('http') ? det.snapshot_url : `${API_BASE}${det.snapshot_url}`;
+  if (det.image) return det.image.startsWith('http') ? det.image : `${API_BASE}${det.image}`;
+  if (det.thumbnail) return det.thumbnail.startsWith('http') ? det.thumbnail : `${API_BASE}${det.thumbnail}`;
+  return '';
+}
+
+// Thumbnail component that uses local detections or fetches from API
+function EpisodeThumbnail({ episode }: { episode: Episode }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/episodes/${episodeId}/details`)
+    // Priority 1: Use thumbnail_url from episode
+    if (episode.thumbnail_url) {
+      const url = episode.thumbnail_url.startsWith('http')
+        ? episode.thumbnail_url
+        : `${API_BASE}${episode.thumbnail_url}`;
+      setImageUrl(url);
+      return;
+    }
+
+    // Priority 2: Use keyframe from episode
+    if (episode.keyframe?.imageUrl) {
+      const url = episode.keyframe.imageUrl.startsWith('http')
+        ? episode.keyframe.imageUrl
+        : `${API_BASE}${episode.keyframe.imageUrl}`;
+      setImageUrl(url);
+      return;
+    }
+
+    // Priority 3: Use first detection from local detections
+    if (episode.detections && episode.detections.length > 0) {
+      const url = getDetectionImageUrl(episode.detections[0]);
+      if (url) {
+        setImageUrl(url);
+        return;
+      }
+    }
+
+    // Priority 4: Fetch from API for persisted episodes
+    fetch(`${API_BASE}/api/episodes/${episode.id}/details`)
       .then(res => {
         if (!res.ok) throw new Error('Not found');
         return res.json();
@@ -85,7 +123,7 @@ function EpisodeThumbnail({ episodeId }: { episodeId: string }) {
         }
       })
       .catch(() => setError(true));
-  }, [episodeId]);
+  }, [episode.id, episode.thumbnail_url, episode.keyframe, episode.detections]);
 
   if (error) {
     return <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500 text-xs">No preview</div>;
@@ -105,6 +143,7 @@ const CAMERAS = [
   { id: 'camera_3', label: 'Backyard Door' },
   { id: 'camera_4', label: 'Camera 4' },
   { id: 'camera_5', label: 'Camera 5' },
+  { id: 'simulation', label: 'Simulation' },
 ];
 
 export default function LiveDashboardV2() {
@@ -126,38 +165,58 @@ export default function LiveDashboardV2() {
           const recentEpisodes = data.episodes.slice(0, 20);
           recentEpisodes.forEach((ep: Record<string, unknown>) => {
             // Parse analysis_json if it's a string (from database)
-            let parsedAnalysis: {
-              threat_assessment?: Episode['threat_assessment'];
-              analysis?: Episode['analysis'];
-              full_report?: string;
-              frames_analyzed?: number;
-              model?: string
-            } = {};
+            // analysis_json contains: subject_description, subject_behavior, reasoning, full_report
+            let parsedAnalysis: Record<string, unknown> = {};
             if (ep.analysis_json && typeof ep.analysis_json === 'string') {
               try {
                 parsedAnalysis = JSON.parse(ep.analysis_json);
               } catch {
                 // Invalid JSON, ignore
               }
+            } else if (ep.analysis_json && typeof ep.analysis_json === 'object') {
+              // Already parsed by API
+              parsedAnalysis = ep.analysis_json as Record<string, unknown>;
             }
 
-            // Merge full_report into analysis object if present
+            // Also check ep.analysis if it's already an object (direct from parseEpisodeRow)
+            if (ep.analysis && typeof ep.analysis === 'object') {
+              parsedAnalysis = { ...parsedAnalysis, ...(ep.analysis as Record<string, unknown>) };
+            }
+
+            // Build analysis object with all parsed fields
             const analysisWithReport = {
-              ...(parsedAnalysis.analysis || ep.analysis as Episode['analysis'] || {}),
-              full_report: parsedAnalysis.full_report
+              subject_description: parsedAnalysis.subject_description as string,
+              subject_behavior: parsedAnalysis.subject_behavior as string,
+              reasoning: parsedAnalysis.reasoning as string,
+              full_report: parsedAnalysis.full_report as string,
             };
+
+            // Build threat_assessment from either:
+            // 1. ep.threat_assessment (from parseEpisodeRow)
+            // 2. ep.threat_code/threat_level/threat_confidence (raw database columns)
+            let threatAssessment = ep.threat_assessment as Episode['threat_assessment'];
+            if (!threatAssessment && ep.threat_code) {
+              threatAssessment = {
+                code: ep.threat_code as string,
+                level: ep.threat_level as string,
+                confidence: ep.threat_confidence as number,
+                code_label: ep.threat_code as string, // Will be formatted by UI
+              };
+            }
 
             useSecurityStore.getState().addEpisode({
               id: ep.id as string,
               camera_id: ep.camera_id as string,
               start_time: ep.start_time as string,
               end_time: ep.end_time as string,
-              // Include persisted analysis data (from parsed analysis_json or direct properties)
-              threat_assessment: parsedAnalysis.threat_assessment || ep.threat_assessment as Episode['threat_assessment'],
+              // Include thumbnail_url for image display
+              thumbnail_url: ep.thumbnail_url as string,
+              // Include persisted analysis data
+              threat_assessment: threatAssessment,
               analysis: analysisWithReport as Episode['analysis'],
-              frames_analyzed: parsedAnalysis.frames_analyzed || ep.frames_analyzed as number,
+              frames_analyzed: (parsedAnalysis.frames_analyzed || ep.frames_analyzed) as number,
               analysis_time_ms: ep.analysis_time_ms as number,
-              model: parsedAnalysis.model || ep.model as string,
+              model: (parsedAnalysis.model || ep.model) as string,
             });
           });
         }
@@ -333,7 +392,7 @@ export default function LiveDashboardV2() {
               >
                 {/* Thumbnail */}
                 <div className="w-32 h-24 bg-black rounded-md overflow-hidden flex-shrink-0">
-                  <EpisodeThumbnail episodeId={ep.id} />
+                  <EpisodeThumbnail episode={ep} />
                 </div>
 
                 {/* Info */}

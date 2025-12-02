@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { Episode, EpisodeDetection } from '@/lib/store';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 
 interface Detection {
-  id: number;
+  id: number | string;
   imageUrl: string;
   key?: string;
   camera_id?: string;
@@ -25,11 +26,21 @@ interface EpisodeDetails {
 
 interface FilmstripProps {
   episodeId: string;
+  episode?: Episode; // Pass the full episode object for live episodes
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function Filmstrip({ episodeId, isOpen, onClose }: FilmstripProps) {
+// Helper to get image URL from detection
+const getImageUrl = (det: Detection | EpisodeDetection): string => {
+  if ('imageUrl' in det && det.imageUrl) return det.imageUrl;
+  if ('snapshot_url' in det && det.snapshot_url) return `${API_BASE}${det.snapshot_url}`;
+  if ('image' in det && det.image) return `${API_BASE}${det.image}`;
+  if ('thumbnail' in det && det.thumbnail) return `${API_BASE}${det.thumbnail}`;
+  return '';
+};
+
+export default function Filmstrip({ episodeId, episode, isOpen, onClose }: FilmstripProps) {
   const [details, setDetails] = useState<EpisodeDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +49,32 @@ export default function Filmstrip({ episodeId, isOpen, onClose }: FilmstripProps
 
   useEffect(() => {
     if (isOpen && episodeId) {
-      fetchDetails();
+      // If episode has local detections, use them directly
+      if (episode?.detections && episode.detections.length > 0) {
+        const localDetections: Detection[] = episode.detections.slice(0, 10).map((det, idx) => ({
+          id: det.id || idx,
+          imageUrl: getImageUrl(det),
+          timestamp: det.timestamp
+        }));
+        setDetails({
+          success: true,
+          episode_id: episodeId,
+          camera_id: episode.camera_id,
+          start_time: episode.start_time,
+          end_time: episode.end_time,
+          count: localDetections.length,
+          source: 'live',
+          detections: localDetections
+        });
+        setSelectedIndex(0);
+        setLoading(false);
+        setError(null);
+      } else {
+        // Fetch from API for non-live episodes
+        fetchDetails();
+      }
     }
-  }, [isOpen, episodeId]);
+  }, [isOpen, episodeId, episode]);
 
   const fetchDetails = async () => {
     setLoading(true);

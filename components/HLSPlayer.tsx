@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 
 interface HLSPlayerProps {
@@ -12,6 +12,9 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -26,6 +29,12 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    retryCountRef.current = 0;
+    setIsLoading(true);
 
     if (Hls.isSupported()) {
       // Chrome, Firefox, Edge - use hls.js with LOW LATENCY settings
@@ -50,6 +59,8 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
         if (hls.liveSyncPosition) {
           video.currentTime = hls.liveSyncPosition;
         }
+        setIsLoading(false);
+        retryCountRef.current = 0; // Reset retry count on success
         video.play().catch((err) => {
           console.log('[HLSPlayer] Autoplay blocked:', err.message);
         });
@@ -65,20 +76,34 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
-          console.error('[HLSPlayer] Fatal error:', data.type, data.details);
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              console.log('[HLSPlayer] Network error, attempting recovery...');
-              hls.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.log('[HLSPlayer] Media error, attempting recovery...');
-              hls.recoverMediaError();
-              break;
-            default:
-              console.error('[HLSPlayer] Unrecoverable error');
-              hls.destroy();
-              break;
+          const maxRetries = 10;
+
+          if (retryCountRef.current < maxRetries) {
+            retryCountRef.current++;
+            const delay = Math.min(1000 * Math.pow(1.5, retryCountRef.current - 1), 10000);
+
+            // Only log first few retries to avoid console spam
+            if (retryCountRef.current <= 3) {
+              console.log(`[HLSPlayer] ${data.details} - retry ${retryCountRef.current}/${maxRetries} in ${Math.round(delay/1000)}s`);
+            }
+
+            retryTimeoutRef.current = setTimeout(() => {
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  hls.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  // Reload from scratch
+                  hls.loadSource(src);
+                  break;
+              }
+            }, delay);
+          } else {
+            console.error('[HLSPlayer] Max retries reached, stream unavailable');
+            setIsLoading(false);
           }
         }
       });
@@ -100,6 +125,10 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
       if (hlsRef.current) {
         hlsRef.current.destroy();

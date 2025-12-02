@@ -12,6 +12,17 @@ export interface Detection {
   url?: string;      // v3 alt field
 }
 
+export interface EpisodeDetection {
+  id?: string | number;
+  imageUrl?: string;
+  snapshot_url?: string;
+  image?: string;
+  thumbnail?: string;
+  timestamp?: string;
+  confidence?: number;
+  class?: string;
+}
+
 export interface Episode {
   id: string;
   camera_id: string;
@@ -19,14 +30,21 @@ export interface Episode {
   end_time?: string;
   keyframe?: { imageUrl: string };
   thumbnail_url?: string; // Direct thumbnail URL from backend
+  detection_count?: number; // Number of detections in this episode
+  detections?: EpisodeDetection[]; // Array of detections for filmstrip
+  best_confidence?: number;
+  primary_class?: string;
+  source?: 'live' | 'upload';
   threat_assessment?: {
-    level: 'HIGH' | 'MEDIUM' | 'LOW';
+    level: string;
     code: string;
+    code_label?: string;
     confidence: number;
   };
   analysis?: {
-    subject_description: string;
-    subject_behavior: string;
+    subject_description?: string;
+    subject_behavior?: string;
+    reasoning?: string;
     full_report?: string;
   };
   // Full analysis metadata from Gemini

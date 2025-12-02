@@ -63,10 +63,11 @@ export default function SocketManager() {
       useSecurityStore.getState().addEpisode(data);
     });
 
-    // 3. Analysis Results (The Updates) - Now receives full analysis object
+    // 3. Analysis Results (The Updates) - Receives full episode with analysis merged
     globalSocket.on('episode:analyzed', (data) => {
-      console.log('[Socket] 🧠 Analysis Received:', data.episode_id, data);
-      useSecurityStore.getState().updateEpisode(data.episode_id, {
+      const episodeId = data.id || data.episode_id;
+      console.log('[Socket] 🧠 Analysis Received:', episodeId, 'threat:', data.threat_assessment?.code);
+      useSecurityStore.getState().updateEpisode(episodeId, {
         threat_assessment: data.threat_assessment,
         analysis: data.analysis,
         frames_analyzed: data.frames_analyzed,
