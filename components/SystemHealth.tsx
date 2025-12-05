@@ -265,7 +265,10 @@ export default function SystemHealth() {
               Uptime: {status.uptimeFormatted}
             </span>
             <span className="text-[10px] text-gray-400">
-              {new Date(status.timestamp).toLocaleTimeString()}
+              {(() => {
+                const d = new Date(status.timestamp);
+                return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString();
+              })()}
             </span>
           </div>
             </>

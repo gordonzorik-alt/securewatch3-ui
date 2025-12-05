@@ -28,6 +28,7 @@ export interface Episode {
   camera_id: string;
   start_time: string;
   end_time?: string;
+  status?: 'recording' | 'analyzing' | 'complete'; // Episode lifecycle status
   keyframe?: { imageUrl: string };
   thumbnail_url?: string; // Direct thumbnail URL from backend
   detection_count?: number; // Number of detections in this episode

@@ -5,15 +5,13 @@ import {
   ShieldAlert,
   Camera,
   Clock,
-  User,
-  AlertTriangle,
-  Phone,
   Radio,
   Eye,
   ChevronRight,
+  ChevronLeft,
   Zap,
-  MapPin,
-  Activity
+  Activity,
+  X
 } from 'lucide-react';
 import HLSPlayer from './HLSPlayer';
 import { Episode } from '@/lib/store';
@@ -151,223 +149,242 @@ export default function EpisodeExpandedView({ episode, onClose }: { episode: Epi
 
   const getImageUrl = (det: Detection): string => {
     // Handle various URL formats from different sources
-    if (det.imageUrl) return det.imageUrl;
-    if (det.snapshot_url) return det.snapshot_url.startsWith('http') ? det.snapshot_url : `${API_BASE}${det.snapshot_url}`;
-    if (det.image) return det.image.startsWith('http') ? det.image : `${API_BASE}${det.image}`;
-    if (det.thumbnail) return det.thumbnail.startsWith('http') ? det.thumbnail : `${API_BASE}${det.thumbnail}`;
-    if (det.image_path) return det.image_path;
-    if (det.snapshot_path) return det.snapshot_path;
-    return '';
+    let url = '';
+    if (det.imageUrl) url = det.imageUrl;
+    else if (det.snapshot_url) url = det.snapshot_url;
+    else if (det.image) url = det.image;
+    else if (det.thumbnail) url = det.thumbnail;
+    else if (det.image_path) url = det.image_path;
+    else if (det.snapshot_path) url = det.snapshot_path;
+
+    if (!url) return '';
+    // Prepend API_BASE if it's a relative path
+    if (url.startsWith('/')) return `${API_BASE}${url}`;
+    if (url.startsWith('http')) return url;
+    return `${API_BASE}/${url}`;
   };
 
   return (
-    <div className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden shadow-lg ${colors.glow}`}>
-      {/* Header */}
-      <div className="p-4 border-b border-gray-700/50">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${colors.bg} ${colors.border} border`}>
+    <div className="rounded-3xl bg-gray-800 overflow-hidden shadow-2xl shadow-black/50">
+      {/* Centered Header */}
+      <div className="relative px-6 pt-6 pb-4">
+        {/* Close Button - Top Right */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full bg-gray-900/50 hover:bg-gray-700 transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        )}
+
+        {/* Centered Title Block */}
+        <div className="text-center">
+          <div className="inline-flex items-center gap-3 mb-2">
+            <div className={`p-2.5 rounded-2xl ${colors.bg}`}>
               <ShieldAlert className={`w-6 h-6 ${colors.text}`} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-bold text-white">{title}</h3>
-                <span className={`px-2 py-0.5 rounded text-xs font-bold ${colors.bg} ${colors.text} border ${colors.border}`}>
-                  {threatLevel}
-                </span>
-              </div>
-              <p className="text-sm text-gray-400 mt-0.5">{description}</p>
-            </div>
-          </div>
-
-          {/* Confidence Badge */}
-          <div className="text-right">
-            <div className="flex items-center gap-1 text-gray-400">
-              <Activity className="w-4 h-4" />
-              <span className="text-sm">Confidence</span>
-            </div>
-            <span className={`text-2xl font-bold ${colors.text}`}>
-              {Math.round(confidence * 100)}%
+            <h2 className="text-2xl font-bold text-white">{title}</h2>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${colors.bg} ${colors.text}`}>
+              {threatLevel}
             </span>
           </div>
+          <p className="text-sm text-gray-400 max-w-md mx-auto">{description}</p>
         </div>
 
-        {/* Metadata Row */}
-        <div className="flex items-center gap-6 mt-4 text-sm text-gray-400">
+        {/* Centered Metadata Row */}
+        <div className="flex items-center justify-center gap-6 mt-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
           <div className="flex items-center gap-1.5">
-            <Camera className="w-4 h-4" />
-            <span>{episode.camera_id?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+            <Camera className="w-3.5 h-3.5 text-blue-500" />
+            <span>{episode.camera_id?.replace(/_/g, ' ')}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Clock className="w-4 h-4" />
+            <Clock className="w-3.5 h-3.5 text-blue-500" />
             <span>{formatTimestamp(episode.start_time)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5 text-blue-500" />
+            <span>{Math.round(confidence * 100)}%</span>
           </div>
           {episode.frames_analyzed && (
             <div className="flex items-center gap-1.5">
-              <Zap className="w-4 h-4" />
-              <span>{episode.frames_analyzed} frames analyzed</span>
-            </div>
-          )}
-          {episode.analysis_time_ms && (
-            <div className="flex items-center gap-1.5">
-              <Activity className="w-4 h-4" />
-              <span>{episode.analysis_time_ms}ms</span>
+              <Zap className="w-3.5 h-3.5 text-blue-500" />
+              <span>{episode.frames_analyzed} frames</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
-        {/* Left: Evidence Section */}
-        <div className="space-y-4">
-          {/* Selected Frame (Large) */}
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-              <Eye className="w-4 h-4" />
-              Primary Evidence
-            </h4>
-            <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
+      {/* Twin Windows - Side by Side */}
+      <div className="px-6 pb-4">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Left: Recorded Evidence */}
+          <div className="flex-1">
+            <div className="aspect-video bg-gray-900 rounded-2xl overflow-hidden relative shadow-lg">
               {selectedFrame ? (
                 <img
                   src={getImageUrl(selectedFrame)}
-                  alt="Selected frame"
+                  alt="Evidence"
                   className="w-full h-full object-cover"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-gray-600">
-                  No frame selected
+                  <Eye className="w-8 h-8" />
                 </div>
               )}
-              {selectedFrame && (
-                <div className="absolute bottom-2 left-2 right-2 flex justify-between items-end">
-                  <div className="bg-black/70 px-2 py-1 rounded text-xs text-white">
-                    {formatTimestamp(selectedFrame.timestamp || selectedFrame.time || '')}
-                  </div>
-                  {selectedFrame.confidence && (
-                    <div className="bg-green-600/80 px-2 py-1 rounded text-xs text-white font-medium">
-                      {selectedFrame.label || 'person'} {Math.round(selectedFrame.confidence * 100)}%
-                    </div>
-                  )}
+              {/* Overlay Badge - Bottom Left */}
+              <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                <div className="bg-gray-900/80 backdrop-blur px-2.5 py-1 rounded-lg text-xs text-white flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-blue-400" />
+                  {formatTimestamp(selectedFrame?.timestamp || selectedFrame?.time || '')}
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Frame Filmstrip */}
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Trigger Sequence ({frames.length} frames)
-            </h4>
-            {loading ? (
-              <div className="h-20 bg-gray-800 rounded-lg animate-pulse flex items-center justify-center text-gray-600">
-                Loading frames...
-              </div>
-            ) : frames.length > 0 ? (
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-700">
-                {frames.slice(0, 12).map((frame, idx) => (
-                  <div
-                    key={frame.id || idx}
-                    onClick={() => setSelectedFrame(frame)}
-                    className={`flex-shrink-0 w-24 h-16 rounded-md overflow-hidden cursor-pointer transition-all ${
-                      selectedFrame?.id === frame.id
-                        ? 'ring-2 ring-blue-500 scale-105'
-                        : 'opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <img
-                      src={getImageUrl(frame)}
-                      alt={`Frame ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ))}
-                {frames.length > 12 && (
-                  <div className="flex-shrink-0 w-24 h-16 rounded-md bg-gray-800 flex items-center justify-center text-gray-500 text-xs">
-                    +{frames.length - 12} more
+                {selectedFrame?.confidence && (
+                  <div className="bg-green-900/80 backdrop-blur px-2.5 py-1 rounded-lg text-xs text-green-400 font-medium">
+                    {Math.round(selectedFrame.confidence * 100)}%
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="h-20 bg-gray-800/50 rounded-lg flex items-center justify-center text-gray-600 text-sm">
-                No frames available
-              </div>
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Right: Live View + Analysis */}
-        <div className="space-y-4">
-          {/* Live Camera Feed */}
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-              <Radio className="w-4 h-4 animate-pulse text-red-500" />
-              Live View
-            </h4>
-            <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
+          {/* Right: Live Feed */}
+          <div className="flex-1">
+            <div className="aspect-video bg-gray-900 rounded-2xl overflow-hidden relative shadow-lg">
               <HLSPlayer
                 src={`${STREAM_BASE}/${episode.camera_id}/index.m3u8`}
                 className="w-full h-full"
               />
-              <div className="absolute top-2 left-2 bg-red-600/80 px-2 py-0.5 rounded text-xs text-white font-medium flex items-center gap-1">
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+              {/* Live Badge - Top Left */}
+              <div className="absolute top-3 left-3 bg-red-900/80 backdrop-blur px-2.5 py-1 rounded-lg text-xs text-red-400 font-medium flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse" />
                 LIVE
               </div>
-            </div>
-          </div>
-
-          {/* AI Analysis - Show full_report if available, otherwise behavior */}
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              AI Threat Analysis
-            </h4>
-            {episode.analysis?.full_report ? (
-              <div className="font-mono text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
-                {episode.analysis.full_report}
+              {/* Camera Icon - Bottom Right */}
+              <div className="absolute bottom-3 right-3 bg-gray-900/80 backdrop-blur p-2 rounded-lg">
+                <Radio className="w-4 h-4 text-red-400" />
               </div>
-            ) : behavior ? (
-              <p className="text-sm text-gray-300 leading-relaxed">{behavior}</p>
-            ) : (
-              <p className="text-sm text-gray-500 italic">No detailed analysis available.</p>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2">
-            <button className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium text-white transition-colors">
-              <User className="w-4 h-4" />
-              Mark as Known
-            </button>
-            <button className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium text-white transition-colors">
-              <MapPin className="w-4 h-4" />
-              View on Map
-            </button>
-            <button className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 hover:bg-amber-500 rounded-lg text-sm font-medium text-white transition-colors">
-              <AlertTriangle className="w-4 h-4" />
-              Flag Suspicious
-            </button>
-            <button className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium text-white transition-colors">
-              <Phone className="w-4 h-4" />
-              Call 911
-            </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-3 bg-gray-900/50 border-t border-gray-700/50 flex items-center justify-between">
-        <div className="text-xs text-gray-500">
-          Episode ID: {episode.id}
-        </div>
-        {onClose && (
+      {/* Centered Timeline Filmstrip */}
+      <div className="px-6 pb-4">
+        <div className="flex items-center justify-center gap-3">
+          {/* Left Arrow */}
           <button
-            onClick={onClose}
-            className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
+            onClick={() => {
+              const currentIdx = frames.findIndex(f => f.id === selectedFrame?.id);
+              if (currentIdx > 0) {
+                setSelectedFrame(frames[currentIdx - 1]);
+              }
+            }}
+            disabled={frames.findIndex(f => f.id === selectedFrame?.id) <= 0}
+            className="flex-shrink-0 p-2.5 rounded-xl bg-gray-900 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            Collapse <ChevronRight className="w-3 h-3 rotate-90" />
+            <ChevronLeft className="w-5 h-5 text-white" />
           </button>
-        )}
+
+          {/* Filmstrip */}
+          {loading ? (
+            <div className="flex gap-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="w-20 h-14 rounded-xl bg-gray-900 animate-pulse" />
+              ))}
+            </div>
+          ) : frames.length > 0 ? (
+            <div className="flex gap-2 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-gray-700">
+              {frames.slice(0, 8).map((frame, idx) => (
+                <div
+                  key={frame.id || idx}
+                  onClick={() => setSelectedFrame(frame)}
+                  className={`flex-shrink-0 w-20 h-14 rounded-xl overflow-hidden cursor-pointer transition-all ${
+                    selectedFrame?.id === frame.id
+                      ? 'ring-2 ring-blue-500 scale-105 shadow-lg shadow-blue-500/20'
+                      : 'opacity-60 hover:opacity-100 hover:scale-102'
+                  }`}
+                >
+                  <img
+                    src={getImageUrl(frame)}
+                    alt={`Frame ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ))}
+              {frames.length > 8 && (
+                <div className="flex-shrink-0 w-20 h-14 rounded-xl bg-gray-900 flex items-center justify-center text-gray-500 text-xs font-medium">
+                  +{frames.length - 8}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-gray-500 text-sm">No frames</div>
+          )}
+
+          {/* Right Arrow */}
+          <button
+            onClick={() => {
+              const currentIdx = frames.findIndex(f => f.id === selectedFrame?.id);
+              if (currentIdx < frames.length - 1) {
+                setSelectedFrame(frames[currentIdx + 1]);
+              }
+            }}
+            disabled={frames.findIndex(f => f.id === selectedFrame?.id) >= frames.length - 1}
+            className="flex-shrink-0 p-2.5 rounded-xl bg-gray-900 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight className="w-5 h-5 text-white" />
+          </button>
+        </div>
+      </div>
+
+      {/* AI Analysis Box */}
+      <div className="px-6 pb-4">
+        <div className="p-5 rounded-2xl bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/30">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="p-1.5 rounded-lg bg-blue-500/20">
+              <Zap className="w-3.5 h-3.5 text-blue-400" />
+            </div>
+            <span className="text-xs font-medium text-gray-400">AI Analysis</span>
+          </div>
+          {episode.analysis?.full_report ? (
+            <div className="text-sm text-gray-200 leading-relaxed max-h-48 overflow-y-auto space-y-3">
+              {episode.analysis.full_report.split('\n\n').map((paragraph: string, idx: number) => {
+                const trimmed = paragraph.trim();
+                if (!trimmed || trimmed.match(/^[═━─]+$/)) return null;
+                const isHeader = (trimmed.startsWith('Threat Level:') || trimmed.startsWith('Classification:') || trimmed.startsWith('Recommended Action:'));
+                return (
+                  <p key={idx} className={isHeader ? 'text-xs text-blue-400 font-medium' : ''}>
+                    {trimmed}
+                  </p>
+                );
+              })}
+            </div>
+          ) : behavior ? (
+            <p className="text-sm text-gray-200 leading-relaxed">{behavior}</p>
+          ) : (
+            <p className="text-sm text-gray-500 italic text-center">No analysis available</p>
+          )}
+        </div>
+      </div>
+
+      {/* Centered Action Bar */}
+      <div className="px-6 pb-6">
+        <div className="flex items-center justify-center gap-3">
+          <button className="px-5 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-700 border border-gray-700 text-sm font-medium text-gray-300 transition-colors">
+            Continue Monitoring
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-8 py-2.5 rounded-xl bg-green-900/30 hover:bg-green-900/50 border border-green-500/30 text-sm font-medium text-green-400 transition-colors"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+        <div className="text-center mt-3 text-xs text-gray-600">
+          {episode.id}
+        </div>
       </div>
     </div>
   );

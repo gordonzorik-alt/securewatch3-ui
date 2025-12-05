@@ -324,7 +324,9 @@ export default function ThreatDashboard() {
 
   // Calculate uptime from startedAt timestamp
   const getUptime = (startedAt: string) => {
+    if (!startedAt) return '—';
     const start = new Date(startedAt).getTime();
+    if (isNaN(start)) return '—';
     const now = Date.now();
     const diffMs = now - start;
     const diffMins = Math.floor(diffMs / 60000);
@@ -340,6 +342,7 @@ export default function ThreatDashboard() {
   const formatTime = (timestamp?: string) => {
     if (!timestamp) return '—';
     const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '—';
     return date.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',

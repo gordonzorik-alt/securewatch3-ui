@@ -53,8 +53,12 @@ export default function SocketManager() {
 
     // 1. v2 Raw Detections (The Ticker)
     globalSocket.on('detection:v2', (data) => {
-      console.log('[Socket] 📸 Detection:', data.camera, data.class);
-      useSecurityStore.getState().addDetection(data);
+      const store = useSecurityStore.getState();
+      const before = store.detections.length;
+      console.log('[Socket] 📸 Detection:', data.camera, data.class, 'id:', data.id, 'store has:', before);
+      store.addDetection(data);
+      const after = useSecurityStore.getState().detections.length;
+      console.log('[Socket] After add:', after, 'items (was', before, ')');
     });
 
     // 2. New Episodes (The List)

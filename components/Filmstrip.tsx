@@ -33,11 +33,17 @@ interface FilmstripProps {
 
 // Helper to get image URL from detection
 const getImageUrl = (det: Detection | EpisodeDetection): string => {
-  if ('imageUrl' in det && det.imageUrl) return det.imageUrl;
-  if ('snapshot_url' in det && det.snapshot_url) return `${API_BASE}${det.snapshot_url}`;
-  if ('image' in det && det.image) return `${API_BASE}${det.image}`;
-  if ('thumbnail' in det && det.thumbnail) return `${API_BASE}${det.thumbnail}`;
-  return '';
+  let url = '';
+  if ('imageUrl' in det && det.imageUrl) url = det.imageUrl;
+  else if ('snapshot_url' in det && det.snapshot_url) url = det.snapshot_url;
+  else if ('image' in det && det.image) url = det.image;
+  else if ('thumbnail' in det && det.thumbnail) url = det.thumbnail;
+
+  if (!url) return '';
+  // Prepend API_BASE if it's a relative path
+  if (url.startsWith('/')) return `${API_BASE}${url}`;
+  if (url.startsWith('http')) return url;
+  return `${API_BASE}/${url}`;
 };
 
 export default function Filmstrip({ episodeId, episode, isOpen, onClose }: FilmstripProps) {

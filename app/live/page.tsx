@@ -6,6 +6,7 @@ import { useSecurityStore, Episode } from '@/lib/store';
 import DetectionTicker from '@/components/DetectionTicker';
 import HLSPlayer from '@/components/HLSPlayer';
 import EpisodeExpandedView from '@/components/EpisodeExpandedView';
+import CameraToggles from '@/components/CameraToggles';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 const STREAM_BASE = 'http://136.119.129.106:8888'; // HLS streams on port 8888
@@ -36,14 +37,22 @@ function formatEpisodeTime(ep: { end_time?: string; start_time?: string }): stri
 // Generate intelligent headline from threat code and analysis
 function getIntelligentHeadline(ep: {
   threat_assessment?: { code: string; level: string };
-  analysis?: { subject_description: string };
+  analysis?: { subject_description: string; full_report?: string };
   camera_id: string;
 }): string {
   const code = ep.threat_assessment?.code;
-  const description = ep.analysis?.subject_description;
+  let description = ep.analysis?.subject_description;
+
+  // Fallback: extract Camera Feed line from full_report if subject_description is default
+  if ((!description || description === 'See full report' || description === 'Activity detected') && ep.analysis?.full_report) {
+    const cameraFeedMatch = ep.analysis.full_report.match(/Camera Feed:?\s*(.+?)(?:\n|$)/i);
+    if (cameraFeedMatch) {
+      description = cameraFeedMatch[1].trim();
+    }
+  }
 
   // If we have a description, use it as the headline
-  if (description && description !== 'Activity detected') {
+  if (description && description !== 'Activity detected' && description !== 'See full report') {
     // Truncate long descriptions
     return description.length > 60 ? description.slice(0, 57) + '...' : description;
   }
@@ -69,7 +78,7 @@ function getIntelligentHeadline(ep: {
 // Helper to get image URL from detection or episode
 function getDetectionImageUrl(det: Episode['detections'][0]): string {
   if (!det) return '';
-  if (det.imageUrl) return det.imageUrl;
+  if (det.imageUrl) return det.imageUrl.startsWith('http') ? det.imageUrl : `${API_BASE}${det.imageUrl}`;
   if (det.snapshot_url) return det.snapshot_url.startsWith('http') ? det.snapshot_url : `${API_BASE}${det.snapshot_url}`;
   if (det.image) return det.image.startsWith('http') ? det.image : `${API_BASE}${det.image}`;
   if (det.thumbnail) return det.thumbnail.startsWith('http') ? det.thumbnail : `${API_BASE}${det.thumbnail}`;
@@ -80,13 +89,27 @@ function getDetectionImageUrl(det: Episode['detections'][0]): string {
 function EpisodeThumbnail({ episode }: { episode: Episode }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
   useEffect(() => {
+    // Check if episode is still recording (no thumbnail data yet AND started recently)
+    const episodeAge = Date.now() - new Date(episode.start_time).getTime();
+    const isRecent = episodeAge < 30000; // Less than 30 seconds old
+
+    const stillRecording = isRecent && (
+      episode.status === 'recording' ||
+      (!episode.thumbnail_url && !episode.keyframe?.imageUrl && !episode.detections?.length && !episode.end_time)
+    );
+
+    setIsRecording(stillRecording);
+
     // Priority 1: Use thumbnail_url from episode
     if (episode.thumbnail_url) {
       const url = episode.thumbnail_url.startsWith('http')
         ? episode.thumbnail_url
         : `${API_BASE}${episode.thumbnail_url}`;
+      setError(false);
+      setIsRecording(false);
       setImageUrl(url);
       return;
     }
@@ -96,6 +119,8 @@ function EpisodeThumbnail({ episode }: { episode: Episode }) {
       const url = episode.keyframe.imageUrl.startsWith('http')
         ? episode.keyframe.imageUrl
         : `${API_BASE}${episode.keyframe.imageUrl}`;
+      setError(false);
+      setIsRecording(false);
       setImageUrl(url);
       return;
     }
@@ -104,9 +129,16 @@ function EpisodeThumbnail({ episode }: { episode: Episode }) {
     if (episode.detections && episode.detections.length > 0) {
       const url = getDetectionImageUrl(episode.detections[0]);
       if (url) {
+        setError(false);
+        setIsRecording(false);
         setImageUrl(url);
         return;
       }
+    }
+
+    // If still recording, don't try to fetch from API yet
+    if (stillRecording) {
+      return;
     }
 
     // Priority 4: Fetch from API for persisted episodes
@@ -117,13 +149,25 @@ function EpisodeThumbnail({ episode }: { episode: Episode }) {
       })
       .then(data => {
         if (data.success && data.detections?.length > 0) {
-          setImageUrl(data.detections[0].imageUrl);
+          const detUrl = data.detections[0].imageUrl;
+          const fullUrl = detUrl?.startsWith('http') ? detUrl : `${API_BASE}${detUrl}`;
+          setImageUrl(fullUrl);
         } else {
           setError(true);
         }
       })
       .catch(() => setError(true));
-  }, [episode.id, episode.thumbnail_url, episode.keyframe, episode.detections]);
+  }, [episode.id, episode.status, episode.thumbnail_url, episode.keyframe, episode.detections, episode.end_time]);
+
+  // Show recording indicator for in-progress episodes
+  if (isRecording) {
+    return (
+      <div className="w-full h-full bg-gray-800 flex flex-col items-center justify-center text-gray-400 text-xs">
+        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse mb-1"></div>
+        <span>Recording...</span>
+      </div>
+    );
+  }
 
   if (error) {
     return <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500 text-xs">No preview</div>;
@@ -184,17 +228,29 @@ export default function LiveDashboardV2() {
             }
 
             // Build analysis object with all parsed fields
+            // Note: Fields may be at top level OR nested inside parsedAnalysis.analysis
+            const nestedAnalysis = parsedAnalysis.analysis as Record<string, unknown> | undefined;
             const analysisWithReport = {
-              subject_description: parsedAnalysis.subject_description as string,
-              subject_behavior: parsedAnalysis.subject_behavior as string,
-              reasoning: parsedAnalysis.reasoning as string,
-              full_report: parsedAnalysis.full_report as string,
+              subject_description: (nestedAnalysis?.subject_description || parsedAnalysis.subject_description) as string,
+              subject_behavior: (nestedAnalysis?.subject_behavior || parsedAnalysis.subject_behavior) as string,
+              reasoning: (nestedAnalysis?.reasoning || parsedAnalysis.reasoning) as string,
+              full_report: (nestedAnalysis?.full_report || parsedAnalysis.full_report) as string,
             };
 
             // Build threat_assessment from either:
             // 1. ep.threat_assessment (from parseEpisodeRow)
-            // 2. ep.threat_code/threat_level/threat_confidence (raw database columns)
+            // 2. parsedAnalysis.threat_assessment (from analysis_json or ep.analysis)
+            // 3. ep.threat_code/threat_level/threat_confidence (raw database columns)
             let threatAssessment = ep.threat_assessment as Episode['threat_assessment'];
+            if (!threatAssessment && parsedAnalysis.threat_assessment) {
+              const ta = parsedAnalysis.threat_assessment as Record<string, unknown>;
+              threatAssessment = {
+                code: ta.code as string,
+                level: ta.level as string,
+                confidence: ta.confidence as number,
+                code_label: ta.code as string,
+              };
+            }
             if (!threatAssessment && ep.threat_code) {
               threatAssessment = {
                 code: ep.threat_code as string,
@@ -272,8 +328,11 @@ export default function LiveDashboardV2() {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">SecureWatch v3.0</h1>
-        <div className={`px-3 py-1 rounded-full text-xs ${isConnected ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
-          {isConnected ? 'System Online' : 'Disconnected'}
+        <div className="flex items-center gap-4">
+          <CameraToggles />
+          <div className={`px-3 py-1 rounded-full text-xs ${isConnected ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+            {isConnected ? 'System Online' : 'Disconnected'}
+          </div>
         </div>
       </div>
 

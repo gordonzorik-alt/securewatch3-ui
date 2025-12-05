@@ -45,8 +45,7 @@ export default function DetectionTicker() {
       return `${API_BASE}${det.imageUrl}`;
     }
     if (det.file) {
-      const filename = det.file.split('/').pop();
-      return `${API_BASE}/v2/live/${filename}`;
+      return det.file.startsWith('http') ? det.file : `${API_BASE}${det.file}`;
     }
     return '';
   };
@@ -54,7 +53,9 @@ export default function DetectionTicker() {
   // Format timestamp for display
   const formatTime = (timeStr: string) => {
     try {
+      if (!timeStr) return '--:--';
       const date = new Date(timeStr);
+      if (isNaN(date.getTime())) return '--:--';
       return date.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
@@ -69,7 +70,9 @@ export default function DetectionTicker() {
   // Format timestamp for expanded view
   const formatFullTime = (timeStr: string) => {
     try {
+      if (!timeStr) return 'Unknown time';
       const date = new Date(timeStr);
+      if (isNaN(date.getTime())) return 'Unknown time';
       return date.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',
