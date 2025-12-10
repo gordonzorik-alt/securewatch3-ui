@@ -423,12 +423,20 @@ export default function SetupPage() {
               <p className="text-white/70 text-sm">Camera Setup Assistant</p>
             </div>
           </div>
-          <Link
-            href="/"
-            className="text-white/70 hover:text-white transition-colors text-sm"
-          >
-            ← Back to Dashboard
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/setup-demo"
+              className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-sm rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              <span>▶</span> View Demo
+            </Link>
+            <Link
+              href="/"
+              className="text-white/70 hover:text-white transition-colors text-sm"
+            >
+              ← Dashboard
+            </Link>
+          </div>
         </div>
       </div>
 

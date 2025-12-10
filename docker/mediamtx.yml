@@ -1,0 +1,66 @@
+# MediaMTX Configuration for SecureWatch
+# RTSP to HLS transcoding for browser playback
+
+# Log level
+logLevel: info
+
+# RTSP server
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp]
+
+# HLS server - for browser playback
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsSegmentCount: 3
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsAllowOrigin: '*'
+
+# WebRTC (optional)
+webrtc: yes
+webrtcAddress: :8889
+
+# API endpoint
+api: yes
+apiAddress: :9997
+
+# Camera paths - will be created automatically when streams connect
+paths:
+  all:
+    # Accept any stream
+    source: publisher
+    # Enable on-demand reading
+    sourceOnDemand: no
+    # Allow reading from anyone
+    readUser: ""
+    readPass: ""
+    # Allow publishing from anyone
+    publishUser: ""
+    publishPass: ""
+
+  # Front door camera
+  front_door:
+    source: publisher
+
+  # Camera 2
+  camera_2:
+    source: publisher
+
+  # Camera 3
+  camera_3:
+    source: publisher
+
+  # Camera 4
+  camera_4:
+    source: publisher
+
+  # Camera 5
+  camera_5:
+    source: publisher
+
+  # Simulation feed (for testing)
+  simulation:
+    source: publisher

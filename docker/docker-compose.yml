@@ -1,0 +1,221 @@
+# SecureWatch Docker Compose
+# Complete AI Video Surveillance Stack
+
+services:
+  # ============================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================
+
+  # Redis - Message broker for real-time detection events
+  redis:
+    image: redis:7-alpine
+    container_name: sw-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # MinIO - S3-compatible object storage for detection images
+  minio:
+    image: minio/minio:latest
+    container_name: sw-minio
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # MinIO bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: sw-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/images --ignore-existing;
+      mc anonymous set download local/images;
+      echo 'MinIO bucket initialized';
+      exit 0;
+      "
+
+  # MediaMTX - RTSP/HLS media server
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: sw-mediamtx
+    ports:
+      - "8554:8554"    # RTSP
+      - "8888:8888"    # HLS
+      - "8889:8889"    # WebRTC
+    environment:
+      MTX_PROTOCOLS: tcp
+      MTX_HLSALWAYSREMUX: "yes"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped
+
+  # ============================================
+  # APPLICATION SERVICES
+  # ============================================
+
+  # SecureWatch API Server
+  api:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.api
+    container_name: sw-api
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      REDIS_HOST: redis
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      PUBLIC_IP: ${PUBLIC_IP:-localhost}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    volumes:
+      - api_data:/app/data
+      - api_uploads:/app/uploads
+      - api_images:/app/v2_images
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Vision Worker - Front Door Camera
+  vision-front-door:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.vision
+    container_name: sw-vision-front-door
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      REDIS_HOST: redis
+      PUBLIC_IP: ${PUBLIC_IP:-localhost}
+    volumes:
+      - yolo_models:/app/models
+    command: ["--camid", "front_door", "--source", "rtsp://mediamtx:8554/front_door"]
+    depends_on:
+      - redis
+      - minio
+      - mediamtx
+    restart: unless-stopped
+
+  # Vision Worker - Camera 2
+  vision-camera-2:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.vision
+    container_name: sw-vision-camera-2
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      REDIS_HOST: redis
+      PUBLIC_IP: ${PUBLIC_IP:-localhost}
+    volumes:
+      - yolo_models:/app/models
+    command: ["--camid", "camera_2", "--source", "rtsp://mediamtx:8554/camera_2"]
+    depends_on:
+      - redis
+      - minio
+      - mediamtx
+    restart: unless-stopped
+
+  # Vision Worker - Camera 3
+  vision-camera-3:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.vision
+    container_name: sw-vision-camera-3
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      REDIS_HOST: redis
+      PUBLIC_IP: ${PUBLIC_IP:-localhost}
+    volumes:
+      - yolo_models:/app/models
+    command: ["--camid", "camera_3", "--source", "rtsp://mediamtx:8554/camera_3"]
+    depends_on:
+      - redis
+      - minio
+      - mediamtx
+    restart: unless-stopped
+
+  # Vision Worker - Simulation (for testing)
+  vision-simulation:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.vision
+    container_name: sw-vision-simulation
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      REDIS_HOST: redis
+      PUBLIC_IP: ${PUBLIC_IP:-localhost}
+    volumes:
+      - yolo_models:/app/models
+    command: ["--camid", "simulation", "--source", "rtsp://mediamtx:8554/simulation"]
+    depends_on:
+      - redis
+      - minio
+      - mediamtx
+    restart: unless-stopped
+    profiles:
+      - simulation  # Only start with: docker compose --profile simulation up
+
+  # ============================================
+  # FRONTEND (Optional - for local development)
+  # ============================================
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: sw-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE: http://${PUBLIC_IP:-localhost}:4000
+    depends_on:
+      - api
+    profiles:
+      - frontend  # Only start with: docker compose --profile frontend up
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  minio_data:
+  api_data:
+  api_uploads:
+  api_images:
+  yolo_models:
+
+networks:
+  default:
+    name: securewatch-net

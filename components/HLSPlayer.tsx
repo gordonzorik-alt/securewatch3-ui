@@ -15,6 +15,7 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUnavailable, setIsUnavailable] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -35,6 +36,7 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
     }
     retryCountRef.current = 0;
     setIsLoading(true);
+    setIsUnavailable(false);
 
     if (Hls.isSupported()) {
       // Chrome, Firefox, Edge - use hls.js with LOW LATENCY settings
@@ -102,8 +104,9 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
               }
             }, delay);
           } else {
-            console.error('[HLSPlayer] Max retries reached, stream unavailable');
+            // Stream unavailable after max retries - this is expected for cameras without active streams
             setIsLoading(false);
+            setIsUnavailable(true);
           }
         }
       });
@@ -138,12 +141,21 @@ export default function HLSPlayer({ src, className = '' }: HLSPlayerProps) {
   }, [src]);
 
   return (
-    <video
-      ref={videoRef}
-      className={`w-full h-full object-contain bg-black ${className}`}
-      autoPlay
-      muted
-      playsInline
-    />
+    <div className={`relative w-full h-full bg-black ${className}`}>
+      <video
+        ref={videoRef}
+        className="w-full h-full object-contain"
+        autoPlay
+        muted
+        playsInline
+      />
+      {isUnavailable && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+          <div className="text-center text-zinc-500">
+            <div className="text-sm">No Stream</div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,0 +1,43 @@
+# SecureWatch API Server Dockerfile
+# Node.js API with better-sqlite3, Redis, Socket.IO
+
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install build dependencies for better-sqlite3
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package files first (for layer caching)
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application code
+COPY server.js ./
+COPY lib/ ./lib/
+COPY *.js ./
+
+# Create directories for data
+RUN mkdir -p /app/data /app/uploads /app/snapshots /app/v2_images
+
+# Expose API port
+EXPOSE 4000
+
+# Environment variables (can be overridden)
+ENV NODE_ENV=production
+ENV PORT=4000
+ENV REDIS_HOST=redis
+ENV MINIO_ENDPOINT=minio
+ENV MINIO_PORT=9000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+
+CMD ["node", "server.js"]

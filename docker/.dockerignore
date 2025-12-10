@@ -1,0 +1,42 @@
+# Docker ignore file
+
+# Node.js
+node_modules
+npm-debug.log
+
+# Next.js
+.next
+out
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+venv
+.venv
+
+# IDE
+.vscode
+.idea
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.docker*
+
+# Data directories (will be volumes)
+data
+uploads
+v2_images
+snapshots
+
+# YOLO weights (large files - mount as volumes)
+*.pt
+
+# Env files
+.env
+.env.local

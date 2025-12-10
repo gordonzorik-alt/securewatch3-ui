@@ -1,0 +1,194 @@
+// =============================================================================
+// v3 Vision Worker Bridge (Redis-Backed State Machine Integration)
+// =============================================================================
+
+import redisEpisodeManager from './RedisEpisodeManager.js';
+import db from './database.js';
+
+// Throttle state for detections (one per camera, 500ms cooldown)
+const v2ThrottleState = {};
+const V2_THROTTLE_MS = 500;
+
+// ============================================================================
+// LIVE EPISODE CACHE - Store frames for filmstrip access
+// ============================================================================
+const liveEpisodeCache = new Map();
+const CACHE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes TTL
+const CACHE_MAX_SIZE = 50;
+
+function cacheEpisode(episodeData) {
+  const now = Date.now();
+  
+  // Clean old entries
+  for (const [id, cached] of liveEpisodeCache) {
+    if (now - cached.timestamp > CACHE_MAX_AGE_MS) {
+      liveEpisodeCache.delete(id);
+    }
+  }
+  
+  // Enforce max size
+  if (liveEpisodeCache.size >= CACHE_MAX_SIZE) {
+    const oldest = [...liveEpisodeCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+    if (oldest) liveEpisodeCache.delete(oldest[0]);
+  }
+  
+  // Cache with frames
+  liveEpisodeCache.set(episodeData.id, {
+    episodeData,
+    frames: episodeData.detections || episodeData.frame_selection || [],
+    timestamp: now
+  });
+  
+  console.log(`[v3-Bridge] Cached episode ${episodeData.id} with ${(episodeData.frame_selection || episodeData.detections || []).length} frames`);
+}
+
+function getCachedEpisode(episodeId) {
+  const cached = liveEpisodeCache.get(episodeId);
+  if (cached && Date.now() - cached.timestamp < CACHE_MAX_AGE_MS) {
+    return cached;
+  }
+  return null;
+}
+
+/**
+ * Process a v3 detection message
+ */
+async function processV2Detection(v3Data, io, processLiveDetection = null) {
+  const cameraId = v3Data.camera;
+  const now = Date.now();
+  const snapshotUrl = v3Data.url || v3Data.imageUrl;
+
+  // Throttle frontend emissions
+  const lastEmit = v2ThrottleState[cameraId] || 0;
+  const shouldEmit = (now - lastEmit) >= V2_THROTTLE_MS;
+
+  if (shouldEmit) {
+    v2ThrottleState[cameraId] = now;
+    io.emit('detection:v2', {
+      id: v3Data.id,
+      camera: cameraId,
+      time: v3Data.time,
+      imageUrl: snapshotUrl,
+      class: v3Data.class,
+      score: v3Data.score
+    });
+    console.log(`[v3-Bridge] ${cameraId}: ${v3Data.class} (${v3Data.score.toFixed(2)}) -> Ticker`);
+  }
+
+  // Feed to Redis-backed Episode Manager
+  const detection = {
+    id: v3Data.id,
+    camera: cameraId,
+    time: v3Data.time,
+    imageUrl: snapshotUrl,
+    image_path: snapshotUrl,
+    class: v3Data.class,
+    score: v3Data.score,
+    confidence: v3Data.score
+  };
+
+  await redisEpisodeManager.processFrame(cameraId, detection);
+
+  // Legacy support
+  if (processLiveDetection) {
+    const v1Data = {
+      camera_id: cameraId,
+      timestamp: v3Data.time,
+      frame_number: Math.floor(Date.now() / 1000),
+      frame_image: null,
+      image_path: snapshotUrl,
+      detections: [{
+        label: v3Data.class,
+        confidence: v3Data.score,
+        bbox: [0, 0, 0, 0],
+        bbox_normalized: [0, 0, 0, 0]
+      }],
+      detection_count: 1,
+      source: 'v3'
+    };
+    processLiveDetection(v1Data);
+  }
+}
+
+/**
+ * Initialize Redis Episode Manager and event handlers
+ */
+async function initEpisodeManagerEvents(io, threatAnalysisService = null) {
+  // Initialize Redis connection
+  await redisEpisodeManager.initialize();
+  
+  // Episode Started
+  redisEpisodeManager.on('episode:start', (data) => {
+    console.log(`[v3-Bridge] Episode Started: ${data.id}`);
+    io.emit('episode:new', {
+      id: data.id,
+      camera_id: data.camera_id,
+      start_time: data.start_time,
+      status: 'recording',
+      keyframe: null,
+      threat_assessment: null,
+      analysis: null
+    });
+  });
+
+  // Episode Ready for AI (triggered by Janitor when session expires)
+  redisEpisodeManager.on('episode:ready', async (episodeData) => {
+    console.log(`[v3-Bridge] Episode Ready: ${episodeData.id} (${episodeData.frame_count} frames)`);
+    
+    // Cache for filmstrip access
+    cacheEpisode(episodeData);
+    
+    // Emit to frontend
+    io.emit('episode:new', {
+      id: episodeData.id,
+      camera_id: episodeData.camera_id,
+      start_time: episodeData.start_time,
+      end_time: episodeData.end_time,
+      duration_sec: episodeData.duration_sec,
+      frame_count: episodeData.frame_count,
+      keyframe: episodeData.keyframe,
+      status: 'analyzing',
+      threat_assessment: null,
+      analysis: null
+    });
+
+    // Trigger Gemini Analysis
+    if (threatAnalysisService) {
+      try {
+        console.log(`[v3-Bridge] Triggering Gemini analysis for ${episodeData.id}`);
+        const analysis = await threatAnalysisService.analyzeLiveEpisode(episodeData);
+        
+        io.emit('episode:analyzed', {
+          episode_id: episodeData.id,
+          threat_assessment: analysis.threat_assessment,
+          analysis: analysis.analysis,
+          frames_analyzed: analysis.frames_analyzed,
+          analysis_time_ms: analysis.analysis_time_ms,
+          model: analysis.model
+        });
+        
+        console.log(`[v3-Bridge] Analysis complete: ${episodeData.id} -> ${analysis.threat_assessment?.code || 'unknown'}`);
+      } catch (err) {
+        console.error(`[v3-Bridge] Analysis failed: ${err.message}`);
+      }
+    }
+  });
+
+  console.log('[v3-Bridge] Redis EpisodeManager events initialized');
+}
+
+/**
+ * Get episode status from Redis
+ */
+async function getEpisodeStatus() {
+  return await redisEpisodeManager.getStatus();
+}
+
+export { 
+  processV2Detection, 
+  initEpisodeManagerEvents, 
+  getEpisodeStatus, 
+  v2ThrottleState,
+  getCachedEpisode,
+  liveEpisodeCache
+};

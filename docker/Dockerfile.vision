@@ -1,0 +1,40 @@
+# SecureWatch Vision Worker Dockerfile
+# YOLO Object Detection with OpenCV and RTSP support
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies for OpenCV, YOLO
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
+    libavcodec-extra \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for layer caching
+COPY requirements.txt ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the vision worker script
+COPY vision_worker_v3.py ./
+
+# Copy YOLO model weights (can be overridden by volume mount)
+# These are large - consider using a volume mount instead
+# COPY yolo11n.pt ./
+
+# Environment variables
+ENV OPENCV_FFMPEG_CAPTURE_OPTIONS="rtsp_transport;tcp"
+ENV S3_ENDPOINT=http://minio:9000
+ENV REDIS_HOST=redis
+ENV PUBLIC_IP=localhost
+
+# No default CMD - camera ID and source must be provided at runtime
+# Example: docker run vision-worker --camid front_door --source rtsp://mediamtx:8554/front_door
+ENTRYPOINT ["python", "vision_worker_v3.py"]
